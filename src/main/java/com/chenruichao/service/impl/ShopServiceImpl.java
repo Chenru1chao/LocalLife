@@ -2,12 +2,13 @@ package com.chenruichao.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chenruichao.dto.Result;
 import com.chenruichao.entity.Shop;
 import com.chenruichao.mapper.ShopMapper;
 import com.chenruichao.service.IShopService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chenruichao.utils.CacheClient;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -16,8 +17,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import javax.annotation.Resource;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -30,13 +29,11 @@ import static com.chenruichao.utils.RedisConstants.*;
 import static com.chenruichao.utils.SystemConstants.DEFAULT_PAGE_SIZE;
 
 @Service
+@RequiredArgsConstructor
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
 
-    @Resource
-    StringRedisTemplate stringRedisTemplate;
-
-    @Resource
-    CacheClient cacheClient;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final CacheClient cacheClient;
 
     @Override
     public Result queryShopById(Long id) {

@@ -80,6 +80,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             save(user);
         }
 
+        // 验证码是一次性的 用完就删掉
+        stringRedisTemplate.delete(codeKey);
+
         return Result.ok(saveLoginUser(user));
     }
 
@@ -186,10 +189,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Override
     public Result sign() {
         Long userId = UserHolder.getUser().getId();
+
         LocalDateTime now = LocalDateTime.now();
         String keySuffix = now.format(DateTimeFormatter.ofPattern("yyyyMM"));
         String key = USER_SIGN_KEY + userId + ":" + keySuffix;
         int day = now.getDayOfMonth();
+
         stringRedisTemplate.opsForValue().setBit(key, day - 1, true);
         return Result.ok();
     }
@@ -198,25 +203,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public Result signCount() {
         Long userId = UserHolder.getUser().getId();
         LocalDateTime now = LocalDateTime.now();
+
         String keySuffix = now.format(DateTimeFormatter.ofPattern("yyyyMM"));
         String key = USER_SIGN_KEY + userId + ":" + keySuffix;
         int day = now.getDayOfMonth();
+
         List<Long> res = stringRedisTemplate.opsForValue().bitField(key,
                 BitFieldSubCommands.create()
                         .get(BitFieldSubCommands.BitFieldType.signed(day)).valueAt(0)
         );
+
         if (res == null || res.isEmpty()) {
             return Result.ok(0);
         }
+
         Long bits = res.get(0);
         if (bits == null || bits == 0) {
             return Result.ok(0);
         }
+
         int nums = 0;
         while ((bits & 1) != 0) {
            nums++;
            bits >>>= 1;
         }
+
         return Result.ok(nums);
     }
 

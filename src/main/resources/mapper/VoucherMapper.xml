@@ -9,5 +9,8 @@
         FROM tb_voucher v
         LEFT JOIN  tb_seckill_voucher sv ON v.id = sv.voucher_id
         WHERE v.shop_id = #{shopId} AND v.status = 1
+              <!-- 普通券没有秒杀记录(sv 为 null)，照常展示；秒杀券只展示活动时间内的 -->
+              AND (sv.voucher_id IS NULL
+                   OR (sv.begin_time &lt;= NOW() AND sv.end_time &gt;= NOW()))
     </select>
 </mapper>

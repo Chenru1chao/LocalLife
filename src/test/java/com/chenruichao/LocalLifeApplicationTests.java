@@ -1,6 +1,8 @@
 package com.chenruichao;
 
+import com.chenruichao.entity.SeckillVoucher;
 import com.chenruichao.entity.Shop;
+import com.chenruichao.service.ISeckillVoucherService;
 import com.chenruichao.service.impl.ShopServiceImpl;
 import com.chenruichao.utils.CacheClient;
 import com.chenruichao.utils.RedisIdWorker;
@@ -11,6 +13,8 @@ import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +25,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.chenruichao.utils.RedisConstants.CACHE_SHOP_KEY;
+import static com.chenruichao.utils.RedisConstants.SECKILL_BEGIN_KEY;
+import static com.chenruichao.utils.RedisConstants.SECKILL_END_KEY;
+import static com.chenruichao.utils.RedisConstants.SECKILL_STOCK_KEY;
 import static com.chenruichao.utils.RedisConstants.SHOP_GEO_KEY;
 
 @SpringBootTest
@@ -35,14 +42,43 @@ class LocalLifeApplicationTests {
     RedisIdWorker redisIdWorker;
 
     @Autowired
-    StringRedisTemplate stringRedisTemplate;
+    ISeckillVoucherService seckillVoucherService;
 
+    @Autowired
+    StringRedisTemplate stringRedisTemplate;
 
     private ExecutorService executorService = Executors.newFixedThreadPool(300);
 
     @Test
     public void PreloadHotKey() {
         cacheClient.setWithLogicalExpiration(CACHE_SHOP_KEY + "1", shopService.getById(1), 20L, TimeUnit.SECONDS);
+    }
+
+    // 缓存预热：把秒杀券的库存和活动时间刷进redis 供seckill.lua判断
+    @Test
+    public void preloadSeckillVoucher() {
+        for (SeckillVoucher sv : seckillVoucherService.list()) {
+            String id = sv.getVoucherId().toString();
+            stringRedisTemplate.opsForValue().set(SECKILL_STOCK_KEY + id, sv.getStock().toString());
+
+            cacheActivityTime(SECKILL_BEGIN_KEY + id, sv.getBeginTime());
+            cacheActivityTime(SECKILL_END_KEY + id, sv.getEndTime());
+
+            System.out.println("voucherId=" + id + " stock=" + sv.getStock()
+                    + " begin=" + sv.getBeginTime() + " end=" + sv.getEndTime()
+                    + " now=" + LocalDateTime.now());
+        }
+    }
+
+    private void cacheActivityTime(String key, LocalDateTime time) {
+        if (time == null) {
+            return;
+        }
+        stringRedisTemplate.opsForValue().set(key, String.valueOf(toEpochSecond(time)));
+    }
+
+    private long toEpochSecond(LocalDateTime time) {
+        return time.atZone(ZoneId.systemDefault()).toEpochSecond();
     }
 
     @Test

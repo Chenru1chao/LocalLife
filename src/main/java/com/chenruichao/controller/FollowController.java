@@ -2,19 +2,19 @@ package com.chenruichao.controller;
 
 import com.chenruichao.dto.Result;
 import com.chenruichao.service.IFollowService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 
 @RestController
 @RequestMapping("/follow")
+@RequiredArgsConstructor
 public class FollowController {
 
-    @Autowired
-    IFollowService followService;
+    private final IFollowService followService;
 
     @PutMapping("/{id}/{isFollow}")
-    public Result Follow(@PathVariable("id") Long id, @PathVariable("isFollow") Boolean isFollow) {
+    public Result Follow(@PathVariable Long id, @PathVariable Boolean isFollow) {
         return followService.follow(id, isFollow);
     }
 

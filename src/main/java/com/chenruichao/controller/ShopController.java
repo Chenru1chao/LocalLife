@@ -6,16 +6,15 @@ import com.chenruichao.dto.Result;
 import com.chenruichao.entity.Shop;
 import com.chenruichao.service.IShopService;
 import com.chenruichao.utils.SystemConstants;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-
-import javax.annotation.Resource;
 
 @RestController
 @RequestMapping("/shop")
+@RequiredArgsConstructor
 public class ShopController {
 
-    @Resource
-    public IShopService shopService;
+    public final IShopService shopService;
 
     @GetMapping("/{id}")
     public Result queryShopById(@PathVariable("id") Long id) {

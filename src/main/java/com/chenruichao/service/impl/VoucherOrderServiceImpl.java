@@ -27,6 +27,11 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import static com.chenruichao.utils.RedisConstants.ORDER_KEY;
+import static com.chenruichao.utils.RedisConstants.QUEUE_CONSUMER;
+import static com.chenruichao.utils.RedisConstants.QUEUE_GROUP;
+import static com.chenruichao.utils.RedisConstants.QUEUE_NAME;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -42,10 +47,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     private static final DefaultRedisScript<Long> defaultRedisScript;
 
-    private static final String ORDER_KEY = "order";
-
-    private static final String QUEUE_NAME = "stream.orders";
-
     @Lazy
     @Resource
     private IVoucherOrderService proxy;
@@ -59,7 +60,27 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @PostConstruct
     private void initTask() {
+        initConsumerGroup();
         SECKILL_ORDER_EXECUTOR.submit(new orderHandlerTask());
+    }
+
+    // 启动前确保消费组已建好 避免组不存在时消费者空转刷异常
+    private void initConsumerGroup() {
+        if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(QUEUE_NAME))) {
+            log.info("消息队列 {} 还不存在，跳过消费组初始化", QUEUE_NAME);
+            return;
+        }
+
+        boolean exists = stringRedisTemplate.opsForStream().groups(QUEUE_NAME).stream()
+                .anyMatch(g -> QUEUE_GROUP.equals(g.groupName()));
+
+        if (exists) {
+            log.info("消费组 {} 已存在", QUEUE_GROUP);
+            return;
+        }
+
+        stringRedisTemplate.opsForStream().createGroup(QUEUE_NAME, QUEUE_GROUP);
+        log.info("消费组 {} 创建成功", QUEUE_GROUP);
     }
 
     // 消费者监听redis消息队列
@@ -69,7 +90,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             while (true) {
                 try {
                     List<MapRecord<String, Object, Object>> res = stringRedisTemplate.opsForStream().read(
-                        Consumer.from("group1", "consumer1"),
+                        Consumer.from(QUEUE_GROUP, QUEUE_CONSUMER),
                         StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
                         StreamOffset.create(QUEUE_NAME, ReadOffset.lastConsumed())
                     );
@@ -85,7 +106,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
                     proxy.createVoucherOrder(voucherOrder);
 
-                    stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, "group1", record.getId());
+                    stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, QUEUE_GROUP, record.getId());
+                    stringRedisTemplate.opsForStream().delete(QUEUE_NAME, record.getId());
                 } catch (Exception e) {
                     handlePendingList();
                 }
@@ -97,7 +119,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         while (true) {
             try {
                 List<MapRecord<String, Object, Object>> res = stringRedisTemplate.opsForStream().read(
-                    Consumer.from("group1", "consumer1"),
+                    Consumer.from(QUEUE_GROUP, QUEUE_CONSUMER),
                     StreamReadOptions.empty().count(1),
                     StreamOffset.create(QUEUE_NAME, ReadOffset.from("0"))
                 );
@@ -111,7 +133,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
                 proxy.createVoucherOrder(voucherOrder);
 
-                stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, "group1", record.getId());
+                stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, QUEUE_GROUP, record.getId());
+                stringRedisTemplate.opsForStream().delete(QUEUE_NAME, record.getId());
             } catch (Exception e) {
                 try {
                     log.error("Pending_list订单处理异常", e);
@@ -135,14 +158,14 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 UserHolder.getUser().getId().toString(), String.valueOf(orderId));
 
         if (res != 0L) {
-            return Result.fail(res == 1 ? "库存不足" : "不能重复下单");
+            return Result.fail(switch ((int) res) {
+                case 1 -> "库存不足";
+                case 2 -> "不能重复下单";
+                case 3 -> "秒杀尚未开始";
+                case 4 -> "秒杀已结束";
+                default -> "下单失败";
+            });
         }
-
-        // TODO:完成异步更新数据库
-        VoucherOrder voucherOrder = new VoucherOrder();
-        voucherOrder.setId(orderId);
-        voucherOrder.setUserId(UserHolder.getUser().getId());
-        voucherOrder.setVoucherId(voucherId);
 
         return Result.ok(orderId);
     }

@@ -3,6 +3,7 @@ package com.chenruichao.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chenruichao.dto.Result;
 import com.chenruichao.dto.ScrollResult;
 import com.chenruichao.dto.UserDTO;
@@ -11,33 +12,28 @@ import com.chenruichao.entity.Follow;
 import com.chenruichao.entity.User;
 import com.chenruichao.mapper.BlogMapper;
 import com.chenruichao.service.IBlogService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.chenruichao.service.IFollowService;
 import com.chenruichao.service.IUserService;
 import com.chenruichao.utils.SystemConstants;
 import com.chenruichao.utils.UserHolder;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
 import java.util.*;
 
 import static com.chenruichao.utils.RedisConstants.BLOG_LIKED_KEY;
 import static com.chenruichao.utils.RedisConstants.FEED_KEY;
 
 @Service
+@RequiredArgsConstructor
 public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IBlogService {
 
-    @Resource
-    private IUserService userService;
-
-    @Resource
-    StringRedisTemplate stringRedisTemplate;
-
-    @Resource
-    IFollowService followService;
+    private final IUserService userService;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final IFollowService followService;
 
     @Override
     public Result queryHotBlog(Integer current) {
@@ -102,9 +98,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         List<Long> userIdList = res.stream().map(Long::valueOf).toList();
         String idStr = StrUtil.join(",", userIdList);
         List<UserDTO> userDTOList = userService.query().in("id", userIdList).last("order by field(id," + idStr + ")")
-                .list().stream().map(user -> {
-                    return BeanUtil.copyProperties(user, UserDTO.class);
-                }).toList();
+                .list().stream().map(user -> BeanUtil.copyProperties(user, UserDTO.class)).toList();
         return Result.ok(userDTOList);
     }
 

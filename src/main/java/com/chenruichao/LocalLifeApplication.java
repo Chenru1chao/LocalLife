@@ -13,5 +13,4 @@ public class LocalLifeApplication {
     public static void main(String[] args) {
         SpringApplication.run(LocalLifeApplication.class, args);
     }
-
 }

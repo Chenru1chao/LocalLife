@@ -26,7 +26,7 @@ mybatis-plus:
   type-aliases-package: com.chenruichao.entity # 别名扫描包
 logging:
   level:
-    com.chenruichao: debug
+    com.chenruichao: info
 
 local-life:
   upload-dir: ${UPLOAD_DIR:./imgs/}

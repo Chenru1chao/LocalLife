@@ -7,17 +7,17 @@ import com.chenruichao.entity.Blog;
 import com.chenruichao.service.IBlogService;
 import com.chenruichao.utils.SystemConstants;
 import com.chenruichao.utils.UserHolder;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
 @RequestMapping("/blog")
+@RequiredArgsConstructor
 public class BlogController {
 
-    @Resource
-    private IBlogService blogService;
+    private final IBlogService blogService;
 
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
@@ -25,7 +25,7 @@ public class BlogController {
     }
 
     @PutMapping("/like/{id}")
-    public Result likeBlog(@PathVariable("id") Long id) {
+    public Result likeBlog(@PathVariable Long id) {
         return blogService.likeBlog(id);
     }
 
@@ -47,12 +47,12 @@ public class BlogController {
     }
 
     @GetMapping("/{id}")
-    public Result queryById(@PathVariable("id") Long id) {
+    public Result queryById(@PathVariable Long id) {
         return blogService.queryById(id);
     }
 
     @GetMapping("/likes/{id}")
-    public Result queryLikedUserList(@PathVariable("id") Long id) {
+    public Result queryLikedUserList(@PathVariable Long id) {
         return blogService.queryLikedUserList(id);
     }
 
@@ -60,15 +60,16 @@ public class BlogController {
     public Result queryBlogByUserId(
             @RequestParam(value = "current", defaultValue = "1") Integer current,
             @RequestParam("id") Long id) {
-        Page<Blog> page = blogService.query()
-                .eq("user_id", id).page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
+        Page<Blog> page = blogService.query().eq("user_id", id)
+                .page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
         List<Blog> records = page.getRecords();
         return Result.ok(records);
     }
 
     @GetMapping("/of/follow")
     public Result queryByOfFollow(
-            @RequestParam("lastId") Long lastId, @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
+            @RequestParam("lastId") Long lastId,
+            @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
         return blogService.queryByOfFollow(lastId, offset);
     }
 }
