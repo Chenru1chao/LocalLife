@@ -32,6 +32,7 @@ import static com.chenruichao.utils.RedisConstants.SHOP_GEO_KEY;
 
 @SpringBootTest
 class LocalLifeApplicationTests {
+
     @Autowired
     ShopServiceImpl shopService;
 

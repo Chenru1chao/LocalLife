@@ -8,6 +8,8 @@ import com.chenruichao.entity.Shop;
 import com.chenruichao.mapper.ShopMapper;
 import com.chenruichao.service.IShopService;
 import com.chenruichao.utils.CacheClient;
+import com.google.common.hash.BloomFilter;
+import com.google.common.hash.Funnels;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
@@ -18,6 +20,7 @@ import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,11 +37,42 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     private final StringRedisTemplate stringRedisTemplate;
     private final CacheClient cacheClient;
+    private final BloomFilter<Long> bloomFilter = BloomFilter.create(
+            Funnels.longFunnel(),
+            500,
+            0.01);
+
+    @PostConstruct
+    public void initBloomFilter() {
+        List<Shop> id = query().select("id").list();
+        for (Shop shop : id) {
+            bloomFilter.put(shop.getId());
+        }
+    }
+
+    /**
+     * 覆写保存方法 数据落库成功后同步写入布隆过滤器
+     * 不这样做的话新增店铺会被布隆过滤器判定为"不存在"(假阴性) 直到重启应用才恢复
+     * @author chenruichao
+     */
+    @Override
+    public boolean save(Shop shop) {
+        boolean saved = super.save(shop);
+        // 落库成功后再 put 保证只写入真实存在的数据 同时拿到自增主键
+        if (saved) {
+            bloomFilter.put(shop.getId());
+        }
+        return saved;
+    }
 
     @Override
     public Result queryShopById(Long id) {
+        if (!bloomFilter.mightContain(id)) {
+            return Result.fail("当前商品不存在!");
+        }
+
         // 解决缓存穿透
-        Shop shop = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, CACHE_SHOP_TTL, TimeUnit.SECONDS,
+        Shop shop = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, CACHE_SHOP_TTL, TimeUnit.MINUTES,
                 (shopId) -> getById(id));
 
         // 解决缓存击穿
@@ -208,8 +242,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         int end = current * DEFAULT_PAGE_SIZE;
 
         String key = SHOP_GEO_KEY + typeId;
-        GeoResults<RedisGeoCommands.GeoLocation<String>> geoResults = stringRedisTemplate.opsForGeo().search(key,
-                GeoReference.fromCoordinate(x, y),
+        GeoResults<RedisGeoCommands.GeoLocation<String>> geoResults = stringRedisTemplate.opsForGeo().search(
+                key, GeoReference.fromCoordinate(x, y),
                 new Distance(5000),
                 RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(end)
         );

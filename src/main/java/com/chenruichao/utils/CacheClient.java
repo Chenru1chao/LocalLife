@@ -1,13 +1,16 @@
 package com.chenruichao.utils;
 
 import cn.hutool.core.util.BooleanUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.github.benmanes.caffeine.cache.Cache;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,11 +23,13 @@ import static com.chenruichao.utils.RedisConstants.MUTEX_LOCK_TTL;
  * 抽象缓存工具
  * @author chenruichao
  */
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class CacheClient {
 
-    @Resource
-    StringRedisTemplate stringRedisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final Cache<String, Object> caffeineCache;
 
     private static final ExecutorService executorService = Executors.newFixedThreadPool(5);
 
@@ -37,7 +42,9 @@ public class CacheClient {
      * @param timeUnit 过期时间单位
      */
     public void set(String key, Object object, Long expireTime, TimeUnit timeUnit) {
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(object), expireTime, timeUnit);
+        int extraTime = RandomUtil.randomInt(0, 10);
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(object), expireTime + extraTime, timeUnit);
+        caffeineCache.put(key, object);
     }
 
     /**
@@ -68,7 +75,19 @@ public class CacheClient {
     public <R, T> R queryWithPassThrough(String keyPrefix, T id, Class<R> type, Long expireTime,
                                          TimeUnit timeUnit, Function<T, R> dbFallback) {
         String key = keyPrefix + id;
-        String json = stringRedisTemplate.opsForValue().get(key);
+
+        Object data = caffeineCache.getIfPresent(key);
+
+        if (data != null) {
+            return (R) data;
+        }
+
+        String json = null;
+        try {
+            json = stringRedisTemplate.opsForValue().get(key);
+        } catch (RuntimeException e) {
+            log.error("Redis查询缓存失败");
+        }
 
         // 缓存命中读取缓存即可
         if (StrUtil.isNotBlank(json)) {
@@ -85,11 +104,15 @@ public class CacheClient {
 
         // value为空说明当前数据不存在 设置空对象减数据库重复查询不存在的数据
         if (value == null) {
-            stringRedisTemplate.opsForValue().set(key, "", expireTime, timeUnit);
+            try {
+                int extraTime = RandomUtil.randomInt(0, 10);
+                stringRedisTemplate.opsForValue().set(key, "", expireTime + extraTime, timeUnit);
+            } catch (RuntimeException e) {
+                log.error("Redis设置缓存失败");
+            }
             return null;
         }
 
-        // 设置空对象缓存
         set(key, value, expireTime, timeUnit);
 
         return value;

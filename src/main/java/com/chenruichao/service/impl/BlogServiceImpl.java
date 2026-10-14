@@ -133,8 +133,10 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     public Result queryByOfFollow(Long lastId, Integer offset) {
         Long userId = UserHolder.getUser().getId();
         String key = FEED_KEY + userId;
+
         Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
                 .reverseRangeByScoreWithScores(key, 0, lastId, Long.valueOf(offset), 2);
+
         if (typedTuples == null || typedTuples.isEmpty()) {
             ScrollResult scrollResult = new ScrollResult();
             scrollResult.setList(Collections.emptyList());
@@ -142,12 +144,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             scrollResult.setMinTime(lastId);
             return Result.ok(scrollResult);
         }
+
         int nums = 1;
         long minScore = 0;
+
         ArrayList<Long> ids = new ArrayList<>(typedTuples.size());
+
         for (ZSetOperations.TypedTuple<String> typedTuple : typedTuples) {
-            String curUserId = typedTuple.getValue();
-            ids.add(Long.valueOf(curUserId));
+
+            ids.add(Long.valueOf(typedTuple.getValue()));
+
             long score = Objects.requireNonNull(typedTuple.getScore()).longValue();
             if (score == minScore) {
                 nums++;
@@ -156,6 +162,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                 nums = 1;
             }
         }
+
         String idStr = StrUtil.join(",", ids);
         List<Blog> blogs = query().in("id", ids).last("order by field(id," + idStr + ")").list()
                 .stream().map(blog -> {
@@ -163,10 +170,12 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                     updateLikeStatus(blog);
                     return blog;
                 }).toList();
+
         ScrollResult scrollResult = new ScrollResult();
         scrollResult.setList(blogs);
         scrollResult.setOffset(lastId == minScore ? nums + offset : nums);
         scrollResult.setMinTime(minScore);
+
         return Result.ok(scrollResult);
     }
 }

@@ -1,5 +1,6 @@
 package com.chenruichao.service.impl;
 
+import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -154,9 +155,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     /**
-     * 把用户信息写进redis作为登录凭证 返回用户id当作token
+     * 生成随机登录凭证写入redis 返回该凭证作为token
+     * 凭证必须是不可预测的随机串 之前拿用户id当凭证是可以被枚举伪造的
+     * @author chenruichao
      */
-    private Long saveLoginUser(User user) {
+    private String saveLoginUser(User user) {
         UserDTO userDTO = new UserDTO();
         BeanUtils.copyProperties(user, userDTO);
 
@@ -165,16 +168,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         userDTOMap.put("nickName", userDTO.getNickName());
         userDTOMap.put("icon", userDTO.getIcon());
 
-        // 用户的登录凭证 前缀为login:token
-        String tokenKey = RedisConstants.LOGIN_USER_KEY + user.getId();
+        // 每次登录都生成独立凭证 同一个用户可以多端同时在线 互不影响
+        String token = UUID.randomUUID(true).toString();
+        String tokenKey = RedisConstants.LOGIN_USER_KEY + token;
 
-        Boolean isExists = stringRedisTemplate.hasKey(tokenKey);
+        stringRedisTemplate.opsForHash().putAll(tokenKey, userDTOMap);
+        // 登录时就设过期时间 否则用户登录后不再发请求 这个key会一直留在redis里不过期
+        stringRedisTemplate.expire(tokenKey, RedisConstants.LOGIN_USER_TTL, TimeUnit.SECONDS);
 
-        if (!isExists) {
-            stringRedisTemplate.opsForHash().putAll(tokenKey, userDTOMap);
-        }
-
-        return user.getId();
+        return token;
     }
 
     private User createUserWithPhone(String phone) {
@@ -191,8 +193,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         Long userId = UserHolder.getUser().getId();
 
         LocalDateTime now = LocalDateTime.now();
-        String keySuffix = now.format(DateTimeFormatter.ofPattern("yyyyMM"));
-        String key = USER_SIGN_KEY + userId + ":" + keySuffix;
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
         int day = now.getDayOfMonth();
 
         stringRedisTemplate.opsForValue().setBit(key, day - 1, true);
@@ -210,7 +212,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         List<Long> res = stringRedisTemplate.opsForValue().bitField(key,
                 BitFieldSubCommands.create()
-                        .get(BitFieldSubCommands.BitFieldType.signed(day)).valueAt(0)
+                        .get(BitFieldSubCommands.BitFieldType.signed(day))
+                        .valueAt(0)
         );
 
         if (res == null || res.isEmpty()) {
